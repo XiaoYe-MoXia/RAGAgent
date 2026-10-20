@@ -1,0 +1,27 @@
+# 敏感信息（API 密钥等，切勿上传）
+.env
+.env.*
+
+# 向量数据库（可由 vectorDocs 重建）
+chroma_db/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# 测试与缓存
+.pytest_cache/
+.coverage
+htmlcov/
+
+# 日志
+*.log
+
+# 编辑器与系统文件
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

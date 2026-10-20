@@ -1,0 +1,885 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>🤖 AIAgent 智能客服</title>
+  <style>
+    /* ============ 设计系统 ============ */
+    :root {
+      --bg-primary: #0f1419;
+      --bg-secondary: #1a1f2e;
+      --bg-tertiary: #232938;
+      --bg-hover: #2a3142;
+      --border: #2d3548;
+      --text-primary: #e6e9ef;
+      --text-secondary: #9ca3af;
+      --text-tertiary: #6b7280;
+      --accent: #10a37f;          /* OpenAI 绿 */
+      --accent-hover: #1a7f64;
+      --user-bubble: #2a3142;
+      --ai-bubble: #1a3a32;
+      --error: #ef4444;
+      --warning: #f59e0b;
+      --code-bg: #0d1117;
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+                   "Microsoft YaHei", sans-serif;
+      background: var(--bg-primary);
+      color: var(--text-primary);
+      height: 100vh;
+      overflow: hidden;
+    }
+
+    /* ============ 布局 ============ */
+    .app {
+      display: grid;
+      grid-template-columns: 260px 1fr;
+      height: 100vh;
+    }
+
+    /* 侧边栏 */
+    .sidebar {
+      background: var(--bg-secondary);
+      border-right: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    .sidebar-header {
+      padding: 16px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .logo {
+      font-size: 18px;
+      font-weight: 600;
+      margin-bottom: 12px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .new-chat-btn {
+      width: 100%;
+      padding: 10px;
+      background: var(--accent);
+      color: white;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 14px;
+      font-weight: 500;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      transition: background 0.15s;
+    }
+    .new-chat-btn:hover { background: var(--accent-hover); }
+
+    .section-label {
+      padding: 12px 16px 6px;
+      font-size: 11px;
+      color: var(--text-tertiary);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      font-weight: 600;
+    }
+
+    .session-list, .mode-list {
+      flex: 1;
+      overflow-y: auto;
+      padding: 0 8px;
+    }
+    .mode-list { flex: 0 0 auto; padding-bottom: 16px; }
+
+    .session-item, .mode-item {
+      padding: 10px 12px;
+      margin: 2px 0;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 13px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      transition: background 0.1s;
+    }
+    .session-item:hover, .mode-item:hover { background: var(--bg-hover); }
+    .session-item.active, .mode-item.active {
+      background: var(--bg-tertiary);
+      color: var(--accent);
+    }
+    .session-item .name {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      flex: 1;
+    }
+    .session-item .del {
+      opacity: 0;
+      color: var(--text-tertiary);
+      background: none;
+      border: none;
+      cursor: pointer;
+      padding: 0 4px;
+      font-size: 14px;
+    }
+    .session-item:hover .del { opacity: 1; }
+    .session-item .del:hover { color: var(--error); }
+
+    .mode-item .icon { font-size: 16px; margin-right: 8px; }
+
+    /* 主区 */
+    .main {
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      background: var(--bg-primary);
+    }
+
+    .topbar {
+      padding: 14px 24px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      background: var(--bg-secondary);
+    }
+
+    .topbar-title {
+      font-size: 15px;
+      font-weight: 500;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .mode-badge {
+      background: var(--accent);
+      color: white;
+      padding: 3px 10px;
+      border-radius: 12px;
+      font-size: 12px;
+      font-weight: 500;
+    }
+
+    .status-dot {
+      display: inline-block;
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--text-tertiary);
+      margin-right: 6px;
+    }
+    .status-dot.online { background: var(--accent); box-shadow: 0 0 6px var(--accent); }
+    .status-dot.offline { background: var(--error); }
+
+    /* 聊天区 */
+    .chat {
+      flex: 1;
+      overflow-y: auto;
+      padding: 24px 0;
+    }
+    .chat-inner {
+      max-width: 800px;
+      margin: 0 auto;
+      padding: 0 24px;
+    }
+
+    /* 消息行：左右两栏布局 */
+    .message {
+      display: flex;
+      gap: 12px;
+      margin-bottom: 24px;
+      align-items: flex-start;
+      animation: fadeIn 0.25s ease-out;
+    }
+    /* 关键：用户消息整体右对齐 */
+    .message.user { flex-direction: row-reverse; }
+
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(8px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+
+    /* 头像：固定在外侧 */
+    .avatar {
+      flex: 0 0 36px;
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 18px;
+      background: var(--bg-tertiary);
+      flex-shrink: 0;
+    }
+    .message.user .avatar {
+      background: var(--accent);
+      color: white;
+    }
+    .message.ai .avatar {
+      background: var(--bg-tertiary);
+      border: 1px solid var(--border);
+    }
+
+    /* 气泡容器：限制最大宽度 */
+    .bubble-wrap {
+      max-width: 70%;
+      display: flex;
+      flex-direction: column;
+    }
+    /* 用户气泡贴右 */
+    .message.user .bubble-wrap { align-items: flex-end; }
+
+    /* 气泡本体的尖角 */
+    .bubble {
+      padding: 10px 14px;
+      border-radius: 12px;
+      line-height: 1.65;
+      font-size: 14.5px;
+      word-wrap: break-word;
+      white-space: pre-wrap;
+    }
+    .message.user .bubble {
+      background: var(--accent);
+      color: white;
+      border-bottom-right-radius: 4px;  /* 尖角 */
+    }
+    .message.ai .bubble {
+      background: var(--bg-secondary);
+      border: 1px solid var(--border);
+      border-bottom-left-radius: 4px;   /* 尖角 */
+    }
+
+    /* 用户气泡里代码块特殊处理 */
+    .message.user .bubble pre {
+      background: rgba(0, 0, 0, 0.25);
+      padding: 8px 10px;
+      border-radius: 6px;
+      overflow-x: auto;
+      margin: 6px 0;
+      font-size: 12.5px;
+    }
+    .message.ai .bubble pre {
+      background: var(--code-bg);
+      padding: 8px 10px;
+      border-radius: 6px;
+      overflow-x: auto;
+      margin: 6px 0;
+      font-size: 12.5px;
+    }
+
+    /* 时间戳 / 名字（可选小字） */
+    .msg-meta {
+      font-size: 11px;
+      color: var(--text-tertiary);
+      margin-top: 4px;
+      padding: 0 4px;
+    }
+    .message.user .msg-meta { text-align: right; }
+
+    /* 来源 / 日志小卡 */
+    .meta-card {
+      margin-top: 8px;
+      background: var(--bg-tertiary);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 10px 12px;
+      font-size: 12.5px;
+    }
+    .meta-card .title {
+      color: var(--text-secondary);
+      font-weight: 600;
+      margin-bottom: 6px;
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    .source-tag {
+      display: inline-block;
+      background: var(--bg-secondary);
+      border: 1px solid var(--border);
+      padding: 3px 8px;
+      border-radius: 10px;
+      margin: 2px;
+      font-size: 11.5px;
+      color: var(--text-secondary);
+    }
+    .log-line {
+      padding: 3px 0;
+      color: var(--text-secondary);
+      font-family: ui-monospace, "Cascadia Code", Menlo, monospace;
+      font-size: 12px;
+      border-bottom: 1px dashed var(--border);
+    }
+    .log-line:last-child { border-bottom: none; }
+    .trace-live {
+      white-space: pre-wrap;
+      word-break: break-word;
+      max-height: 280px;
+      overflow-y: auto;
+    }
+
+    /* 打字光标 */
+    .typing::after {
+      content: '▍';
+      color: var(--accent);
+      animation: blink 1s infinite;
+    }
+    @keyframes blink {
+      0%, 50% { opacity: 1; }
+      51%, 100% { opacity: 0; }
+    }
+
+    /* 输入区 */
+    .composer {
+      padding: 16px 24px 24px;
+      border-top: 1px solid var(--border);
+      background: var(--bg-secondary);
+    }
+    .composer-inner {
+      max-width: 800px;
+      margin: 0 auto;
+      background: var(--bg-tertiary);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 10px 14px;
+      display: flex;
+      gap: 10px;
+      align-items: flex-end;
+      transition: border-color 0.15s;
+    }
+    .composer-inner:focus-within { border-color: var(--accent); }
+
+    #input {
+      flex: 1;
+      background: transparent;
+      border: none;
+      outline: none;
+      color: var(--text-primary);
+      font-size: 14.5px;
+      resize: none;
+      max-height: 160px;
+      min-height: 24px;
+      font-family: inherit;
+      line-height: 1.5;
+    }
+    #input::placeholder { color: var(--text-tertiary); }
+
+    .send-btn {
+      background: var(--accent);
+      color: white;
+      border: none;
+      width: 34px;
+      height: 34px;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 16px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: background 0.15s, transform 0.1s;
+    }
+    .send-btn:hover:not(:disabled) { background: var(--accent-hover); }
+    .send-btn:active:not(:disabled) { transform: scale(0.95); }
+    .send-btn:disabled {
+      background: var(--bg-hover);
+      color: var(--text-tertiary);
+      cursor: not-allowed;
+    }
+
+    .hint {
+      max-width: 800px;
+      margin: 8px auto 0;
+      text-align: center;
+      font-size: 11.5px;
+      color: var(--text-tertiary);
+    }
+
+    /* 空状态 */
+    .empty {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 100%;
+      color: var(--text-tertiary);
+      gap: 12px;
+      padding: 40px;
+      text-align: center;
+    }
+    .empty .emoji { font-size: 56px; opacity: 0.7; }
+    .empty h2 { font-weight: 500; font-size: 18px; color: var(--text-secondary); }
+    .empty p { font-size: 13px; max-width: 380px; line-height: 1.6; }
+
+    /* 滚动条 */
+    ::-webkit-scrollbar { width: 8px; height: 8px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb {
+      background: var(--bg-hover);
+      border-radius: 4px;
+    }
+    ::-webkit-scrollbar-thumb:hover { background: var(--border); }
+
+    /* 响应式 */
+    @media (max-width: 768px) {
+      .app { grid-template-columns: 1fr; }
+      .sidebar { display: none; }
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <!-- ===== 侧边栏 ===== -->
+    <aside class="sidebar">
+      <div class="sidebar-header">
+        <div class="logo">🤖 AIAgent</div>
+        <button class="new-chat-btn" onclick="newChat()">+ 新对话</button>
+      </div>
+
+      <div class="section-label">模式</div>
+      <div class="mode-list" id="modeList"></div>
+
+      <div class="section-label">会话</div>
+      <div class="session-list" id="sessionList"></div>
+    </aside>
+
+    <!-- ===== 主区 ===== -->
+    <main class="main">
+      <div class="topbar">
+        <div class="topbar-title">
+          <span id="modeBadge" class="mode-badge">chain</span>
+          <span id="modeDesc">固定流程（清洗→分类→专家→校验）</span>
+        </div>
+        <div style="font-size:12px;color:var(--text-secondary);">
+          <span id="statusDot" class="status-dot"></span>
+          <span id="statusText">未连接</span>
+        </div>
+      </div>
+
+      <div class="chat" id="chat">
+        <div class="empty" id="empty">
+          <div class="emoji">💬</div>
+          <h2>开始对话</h2>
+          <p>选一个模式，输入问题，回车发送。试试切换 RAG 模式问"咖啡机的水泵是什么品牌"。</p>
+        </div>
+      </div>
+
+      <div class="composer">
+        <div class="composer-inner">
+          <textarea id="input"
+                    rows="1"
+                    placeholder="输入问题，Enter 发送，Shift+Enter 换行"
+                    onkeydown="handleKey(event)"></textarea>
+          <button class="send-btn" id="sendBtn" onclick="send()">↑</button>
+        </div>
+        <div class="hint">Powered by LangChain 1.x · FastAPI · AIAgent v0.1</div>
+      </div>
+    </main>
+  </div>
+
+  <script>
+    // ====== 配置 ======
+    const API_BASE = "http://localhost:8000";
+
+    const MODES = [
+      { id: "auto",  icon: "✨", desc: "智能客服（自动路由：知识库/工具/对话，带记忆）" },
+      { id: "chain", icon: "🔗", desc: "固定流程（清洗→分类→专家→校验）" },
+      { id: "rag",   icon: "📚", desc: "RAG 检索增强（基于知识库）" },
+      { id: "agent", icon: "🤖", desc: "Agent（自主调用工具）" },
+      { id: "multi", icon: "💬", desc: "多轮对话（带记忆）" },
+      { id: "stream", icon: "⚡", desc: "流式输出（SSE）" },
+    ];
+
+    // ====== 状态 ======
+    let state = {
+      mode: "auto",
+      sessionId: localStorage.getItem("aia_sid") || genId(),
+      history: {},   // sessionId -> [messages]
+      sending: false,
+    };
+    localStorage.setItem("aia_sid", state.sessionId);
+
+    // ====== 工具 ======
+    function genId() { return "s_" + Math.random().toString(36).slice(2, 10); }
+    function esc(s) {
+      return String(s ?? "").replace(/[&<>"']/g, c => (
+        { "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[c]
+      ));
+    }
+    function nl2br(s) { return esc(s); }  // white-space:pre-wrap 自动处理 \n
+
+    // ====== 渲染侧边栏 ======
+    function renderModes() {
+      document.getElementById("modeList").innerHTML = MODES.map(m => `
+        <div class="mode-item ${state.mode === m.id ? "active" : ""}"
+             onclick="switchMode('${m.id}')">
+          <span class="icon">${m.icon}</span>
+          <span>${m.id}</span>
+        </div>
+      `).join("");
+    }
+    function renderSessions() {
+      const list = Object.keys(state.history);
+      if (list.length === 0) {
+        document.getElementById("sessionList").innerHTML = `
+          <div style="padding:12px;font-size:12px;color:var(--text-tertiary);text-align:center;">
+            暂无会话
+          </div>`;
+        return;
+      }
+      document.getElementById("sessionList").innerHTML = list.map(sid => {
+        const first = state.history[sid][0];
+        const title = (first?.content || "新对话").slice(0, 20);
+        return `
+          <div class="session-item ${sid === state.sessionId ? "active" : ""}"
+               onclick="switchSession('${sid}')">
+            <span class="name">${esc(title)}</span>
+            <button class="del" onclick="event.stopPropagation();deleteSession('${sid}')" title="删除">×</button>
+          </div>`;
+      }).join("");
+    }
+
+    function switchMode(m) {
+      state.mode = m;
+      renderModes();
+      const mode = MODES.find(x => x.id === m);
+      document.getElementById("modeBadge").textContent = m;
+      document.getElementById("modeDesc").textContent = mode.desc;
+    }
+
+    function switchSession(sid) {
+      state.sessionId = sid;
+      localStorage.setItem("aia_sid", sid);
+      renderSessions();
+      renderChat();
+    }
+
+    function newChat() {
+      const sid = genId();
+      state.sessionId = sid;
+      state.history[sid] = [];
+      localStorage.setItem("aia_sid", sid);
+      renderSessions();
+      renderChat();
+    }
+
+    function deleteSession(sid) {
+      if (!confirm("删除会话 " + sid + " ?")) return;
+      delete state.history[sid];
+      fetch(`${API_BASE}/api/sessions/${sid}`, { method: "DELETE" }).catch(() => {});
+      if (state.sessionId === sid) {
+        const remain = Object.keys(state.history);
+        state.sessionId = remain[0] || genId();
+        state.history[state.sessionId] = state.history[state.sessionId] || [];
+        localStorage.setItem("aia_sid", state.sessionId);
+      }
+      renderSessions();
+      renderChat();
+    }
+
+    // ====== 渲染聊天 ======
+    function renderChat() {
+      const chat = document.getElementById("chat");
+      const msgs = state.history[state.sessionId] || [];
+      if (msgs.length === 0) {
+        chat.innerHTML = `
+          <div class="empty">
+            <div class="emoji">💬</div>
+            <h2>开始对话</h2>
+            <p>当前模式：<b>${state.mode}</b>。${MODES.find(m => m.id === state.mode).desc}</p>
+          </div>`;
+        return;
+      }
+      chat.innerHTML = `<div class="chat-inner">${
+        msgs.map(m => renderMsg(m)).join("")
+      }</div>`;
+      chat.scrollTop = chat.scrollHeight;
+    }
+
+    function renderMsg(m) {
+      const ts = new Date().toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" });
+      if (m.role === "user") {
+        return `
+          <div class="message user">
+            <div class="avatar">👤</div>
+            <div class="bubble-wrap">
+              <div class="bubble">${nl2br(m.content)}</div>
+              <div class="msg-meta">${ts}</div>
+            </div>
+          </div>`;
+      }
+      // AI message
+      let meta = "";
+      if (m.route) {
+        // 智能路由徽章（auto 模式）：走了哪条路径
+        meta += `<div class="meta-card">
+          <div class="title">✨ 智能路由</div>
+          <div><b>${esc(m.route.path)}</b> · ${esc(m.route.desc || "")}</div>
+        </div>`;
+      }
+      if (m.agent_trace) {
+        meta += `<div class="meta-card">
+          <div class="title">🧠 Agent 思考过程（实时）</div>
+          <div class="log-line trace-live">${esc(m.agent_trace)}</div>
+        </div>`;
+      }
+      if (m.sources?.length) {
+        meta += `<div class="meta-card">
+          <div class="title">📚 参考来源 (${m.sources.length})</div>
+          ${m.sources.map(s => `<span class="source-tag">${esc(s.source)}</span>`).join("")}
+        </div>`;
+      }
+      if (m.tool_log?.length) {
+        meta += `<div class="meta-card">
+          <div class="title">🛠️ 思考步骤 (${m.tool_log.length})</div>
+          ${m.tool_log.map(l => `<div class="log-line">${esc(l)}</div>`).join("")}
+        </div>`;
+      }
+      if (m.category || m.validation) {
+        meta += `<div class="meta-card">
+          <div class="title">ℹ️ 元信息</div>
+          <div>分类: <code>${esc(m.category || "default")}</code> · 校验: ${esc(m.validation || "-")}</div>
+        </div>`;
+      }
+      return `
+        <div class="message ai">
+          <div class="avatar">🤖</div>
+          <div class="bubble-wrap">
+            <div class="bubble">
+              ${nl2br(m.content) || "<i style='color:var(--text-tertiary)'>（空回复）</i>"}
+              ${meta}
+            </div>
+            <div class="msg-meta">${ts}</div>
+          </div>
+        </div>`;
+    }
+
+    // ====== 输入处理 ======
+    function handleKey(e) {
+      if (e.key === "Enter" && !e.shiftKey) {
+        e.preventDefault();
+        send();
+      }
+      // 自动撑高
+      e.target.style.height = "auto";
+      e.target.style.height = Math.min(e.target.scrollHeight, 160) + "px";
+    }
+
+    async function send() {
+      const input = document.getElementById("input");
+      const text = input.value.trim();
+      if (!text || state.sending) return;
+      state.sending = true;
+      document.getElementById("sendBtn").disabled = true;
+
+      // 1. 推 user message 到 UI
+      const sid = state.sessionId;
+      state.history[sid] = state.history[sid] || [];
+      state.history[sid].push({ role: "user", content: text });
+      input.value = "";
+      input.style.height = "auto";
+      renderSessions();
+      renderChat();
+
+      // 2. 准备 ai 占位（流式）
+      const aiMsg = { role: "ai", content: "", streaming: true };
+      state.history[sid].push(aiMsg);
+      renderChat();
+
+      try {
+        // ⭐ 所有模式统一走 /api/chat/all-stream
+        await callAllStream(text, sid, aiMsg);
+      } catch (e) {
+        aiMsg.content = `❌ 请求失败: ${e.message}`;
+      } finally {
+        aiMsg.streaming = false;
+        state.sending = false;
+        document.getElementById("sendBtn").disabled = false;
+        renderChat();
+      }
+    }
+
+    async function callSimple(path, body, sid, aiMsg) {
+      const r = await fetch(API_BASE + path, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const data = await r.json();
+      if (!r.ok) {
+        aiMsg.content = `❌ ${r.status}: ${data.detail || r.statusText}`;
+        return;
+      }
+      aiMsg.content = data.answer || "(空回答)";
+      aiMsg.sources = data.metadata?.sources;
+      aiMsg.category = data.metadata?.category;
+      aiMsg.validation = data.metadata?.validation_result;
+      aiMsg.tool_log = data.tool_log;
+    }
+
+    async function callAllStream(query, sid, aiMsg) {
+      // ⭐ 统一调用 /api/chat/all-stream，支持所有模式
+      const r = await fetch(API_BASE + "/api/chat/all-stream", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          query,
+          mode: state.mode,        // chain / rag / agent / multi / stream
+          session_id: sid,
+        }),
+      });
+      if (!r.ok || !r.body) {
+        aiMsg.content = `❌ ${r.status}`;
+        return;
+      }
+
+      const reader = r.body.getReader();
+      const decoder = new TextDecoder();
+      let buf = "";
+
+      // 找到刚渲染的 ai 气泡的 .bubble 子节点，缓存起来（避免每个 token 全量重绘）
+      const chatEl = document.getElementById("chat");
+      let bubbleEl = chatEl.querySelector(".message.ai:last-child .bubble");
+      let traceEl = null;
+      if (bubbleEl) bubbleEl.textContent = "";
+
+      // 工具日志累加（agent 模式用）
+      aiMsg.tool_log = [];
+
+      // renderChat 会重建 DOM，缓存的元素要重新查
+      const requery = () => {
+        bubbleEl = chatEl.querySelector(".message.ai:last-child .bubble");
+        traceEl = chatEl.querySelector(".message.ai:last-child .trace-live");
+      };
+
+      // 处理一条完整的 SSE 事件（event 名 + 跨行合并后的 data）
+      const handleEvent = (ev, data) => {
+        if (ev === "chunk") {
+          // 主文本流（打字机效果）
+          aiMsg.content += data;
+          if (bubbleEl) {
+            bubbleEl.textContent = aiMsg.content;
+            chatEl.scrollTop = chatEl.scrollHeight;
+          }
+        } else if (ev === "agent_token") {
+          // ⭐ Agent 思考过程（ReAct 原文逐 token 打字机）
+          aiMsg.agent_trace = (aiMsg.agent_trace || "") + data;
+          if (!traceEl) {
+            renderChat();  // 首个 token：建"思考过程"卡
+            requery();
+          }
+          if (traceEl) {
+            traceEl.textContent = aiMsg.agent_trace;
+            traceEl.scrollTop = traceEl.scrollHeight;
+            chatEl.scrollTop = chatEl.scrollHeight;
+          }
+        } else if (ev === "route") {
+          // ⭐ 智能路由结果（auto 模式）：{"path": "knowledge", "desc": "..."}
+          try {
+            aiMsg.route = JSON.parse(data);
+          } catch {
+            aiMsg.route = { path: data, desc: "" };
+          }
+          renderChat();
+          requery();
+        } else if (ev === "sources") {
+          // RAG 来源（一次性 JSON）
+          try {
+            aiMsg.sources = JSON.parse(data);
+          } catch {
+            aiMsg.sources = [];
+          }
+          renderChat();
+          requery();
+        } else if (ev === "tool_log") {
+          // Agent 工具调用边界（实时推送）
+          aiMsg.tool_log.push(data);
+          renderChat();
+          requery();
+        } else if (ev === "final") {
+          // Agent 最终答案
+          aiMsg.content = data;
+          if (bubbleEl) bubbleEl.textContent = aiMsg.content;
+        } else if (ev === "step") {
+          // 处理步骤提示（不影响显示，只记录）
+          console.log(`[${state.mode}] ${data}`);
+        } else if (ev === "error") {
+          aiMsg.content = `❌ ${data}`;
+        } else if (ev === "done") {
+          // 流结束标记
+          aiMsg.content = data || aiMsg.content;
+        }
+      };
+
+      // SSE 事件解析（按规范：事件之间用空行分隔，多行 data 以 \n 拼接。
+      // 旧版逐行处理会把 token 里的换行/行尾空格弄丢）
+      let curEvent = "message";
+      let dataLines = [];
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buf += decoder.decode(value, { stream: true });
+        const lines = buf.split("\n");
+        buf = lines.pop();
+        for (const rawLine of lines) {
+          const line = rawLine.endsWith("\r") ? rawLine.slice(0, -1) : rawLine;
+          if (line === "") {
+            if (dataLines.length) {
+              handleEvent(curEvent, dataLines.join("\n"));
+              dataLines = [];
+            }
+            curEvent = "message";
+          } else if (line.startsWith("event:")) {
+            curEvent = line.slice(6).trim();
+          } else if (line.startsWith("data:")) {
+            let d = line.slice(5);
+            if (d.startsWith(" ")) d = d.slice(1);  // 规范：只去掉一个前导空格
+            dataLines.push(d);
+          }
+          // 其余（": ping" 心跳注释等）忽略
+        }
+      }
+      // 流结束：flush 残余事件 + 最终渲染
+      if (dataLines.length) handleEvent(curEvent, dataLines.join("\n"));
+      renderChat();
+    }
+
+    // ====== 健康检查 ======
+    async function checkHealth() {
+      const dot = document.getElementById("statusDot");
+      const txt = document.getElementById("statusText");
+      try {
+        const r = await fetch(API_BASE + "/api/health");
+        const d = await r.json();
+        if (r.ok) {
+          dot.className = "status-dot online";
+          txt.textContent = `在线 · ${d.knowledge_base?.total_chunks ?? 0} chunks`;
+        } else {
+          dot.className = "status-dot offline";
+          txt.textContent = "后端异常";
+        }
+      } catch (e) {
+        dot.className = "status-dot offline";
+        txt.textContent = "无法连接";
+      }
+    }
+
+    // ====== 启动 ======
+    state.history[state.sessionId] = state.history[state.sessionId] || [];
+    renderModes();
+    renderSessions();
+    renderChat();
+    checkHealth();
+    setInterval(checkHealth, 15000);
+  </script>
+</body>
+</html>
